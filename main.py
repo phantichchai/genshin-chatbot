@@ -29,7 +29,7 @@ prompt = ChatPromptTemplate.from_messages(
     ]
 )
 DB_FAISS_PATH = "vectorstores/db_faiss"
-ENABLE_VS = False
+DISABLE_VECTOR_STORE = False
 
 def set_custom_prompt():
     """
@@ -45,6 +45,7 @@ def load_llm():
         model="model/llama-2-7b-chat.Q6_K.gguf",
         model_type="llama",
         max_new_tokens=100,
+        context_length=4096,
         temperature=0.5,
         device=device,
         stop=["Question:", "\n"]
@@ -60,7 +61,7 @@ def qa_bot():
     qa = RetrievalQA.from_chain_type(
         llm=llm,
         chain_type="stuff",
-        retriever=db.as_retriever(search_kwargs={'k': 2}),
+        retriever=db.as_retriever(search_kwargs={'k': 3}),
         return_source_documents=True,
         chain_type_kwargs= {'prompt': qa_prompt}
     )
@@ -71,7 +72,7 @@ def qa_bot():
 ## Chainlit ##
 @cl.on_chat_start
 async def start():
-    if ENABLE_VS:
+    if DISABLE_VECTOR_STORE:
         model = load_llm()
         runnable = prompt | model | StrOutputParser()
         cl.user_session.set("runnable", runnable)
@@ -95,10 +96,10 @@ async def main(message: cl.Message):
     msg.streaming = True
 
     async for token in runnable.astream(
-        input={"question": message.content} if ENABLE_VS else {"query": message.content},
+        input={"question": message.content} if DISABLE_VECTOR_STORE else {"query": message.content},
         config=RunnableConfig(callbacks=[cb])
     ):
-        if ENABLE_VS:
+        if DISABLE_VECTOR_STORE:
             await msg.stream_token(token)
         else:
             await msg.stream_token(token['result'])
