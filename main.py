@@ -5,7 +5,7 @@ from langchain.prompts import ChatPromptTemplate, PromptTemplate
 from langchain.schema import StrOutputParser
 from langchain.schema.runnable import Runnable
 from langchain.schema.runnable.config import RunnableConfig
-from langchain.embeddings import HuggingFaceEmbeddings
+from langchain.embeddings.huggingface import HuggingFaceEmbeddings
 from langchain.vectorstores.faiss import FAISS
 from langchain.chains import RetrievalQA
 
