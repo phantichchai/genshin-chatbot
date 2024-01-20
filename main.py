@@ -44,7 +44,7 @@ def load_llm():
     llm = CTransformers(
         model="model/llama-2-7b-chat.Q6_K.gguf",
         model_type="llama",
-        max_new_tokens=100,
+        max_new_tokens=1024,
         context_length=4096,
         temperature=0.5,
         device=device,
