@@ -1,14 +1,15 @@
 import torch
 from langchain_core.documents.base import Document
 from langchain.text_splitter import HTMLHeaderTextSplitter
-from langchain.document_loaders import AsyncHtmlLoader
-from langchain.embeddings import HuggingFaceEmbeddings
+from langchain.document_loaders.async_html import AsyncHtmlLoader
+from langchain.embeddings.huggingface import HuggingFaceEmbeddings
 from langchain.vectorstores.faiss import FAISS
 from vectorstore_argparser import VectorStoreArgParser
 from typing import Dict, List
 
 DB_FAISS_PATH = "vectorstores/db_faiss"
-SEARCH_URL = "https://genshin-impact.fandom.com/wiki/Furina/Lore"
+LORE = "/Lore"
+COMPANION = "/Companion"
 HEADERS_TO_SPLIT_ON = [
     ("h1", "Header 1"),
     ("h2", "Header 2"),
@@ -17,27 +18,34 @@ HEADERS_TO_SPLIT_ON = [
 LAST_INDEX_OF_LORE = 24
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-def isLoreInfo(metadata: Dict[str, str]):
+
+def isInfo(metadata: Dict[str, str]):
     return len(metadata) != 0
 
 
-def refined_document(documents: List[Document]):
-    # Replace LAST_INDEX_OF_LORE with the actual index you want to iterate until
-    last_index = LAST_INDEX_OF_LORE if LAST_INDEX_OF_LORE < len(documents) else len(documents)
+def search(search_url: str):
+    loader = AsyncHtmlLoader(search_url)
+    documents = loader.load()
+    text_splitter_html = HTMLHeaderTextSplitter(HEADERS_TO_SPLIT_ON)
+    texts_html = text_splitter_html.split_text(documents[0].page_content)
+    filter_documents = []
+    for i in range(len(texts_html)):
+        if isInfo(texts_html[i].metadata):
+            filter_documents.append(texts_html[i])
+    return filter_documents
 
-    filtered_docs = filter(lambda doc: isLoreInfo(doc.metadata), documents[:last_index])
-    return list(filtered_docs)
+
+def refined_document(base_search_url):
+    urls = [base_search_url, base_search_url + LORE, base_search_url + COMPANION]
+    refined_documents = []
+    for url in urls:
+        refined_documents += search(url)
+    return refined_documents
 
 
 def create_vector_store(args: VectorStoreArgParser):
-    loader = AsyncHtmlLoader(args.search_url)
-    documents = loader.load()
     embeddings = HuggingFaceEmbeddings(model_name = 'sentence-transformers/all-MiniLM-L6-v2', model_kwargs= {'device': DEVICE})
-
-    text_splitter = HTMLHeaderTextSplitter(HEADERS_TO_SPLIT_ON)
-    texts = refined_document(
-        documents = text_splitter.split_text(text=documents[0].page_content)
-    )
+    texts = refined_document(args.search_url)
 
     if args.save_vector_store:
         try:
