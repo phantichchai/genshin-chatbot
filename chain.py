@@ -1,4 +1,6 @@
 import torch
+import numpy as np
+from typing import List, Union
 from websearch import WebSearch
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
@@ -7,19 +9,24 @@ from langchain.document_transformers.beautiful_soup_transformer import Beautiful
 from langchain.llms.ctransformers import CTransformers
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.prompts import PromptTemplate
-from langchain_core.runnables import RunnableLambda, RunnableSequence
+from langchain_core.runnables import RunnableLambda, RunnableSequence, RunnableConfig
+from langchain_core.documents.base import Document
+from langchain_core.pydantic_v1 import BaseModel
+from langchain.embeddings.huggingface import HuggingFaceEmbeddings
+
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-custom_prompt_template = """Use the following pieces of information to answer the user's question.
-If you don't know the answer, please just say that you don't know the answer, don't try to make up
-an answer.
+custom_prompt_template = """
+Search the following documents to find the answer for the question: {context}
 
-Context: {context}
+Provide a concise and well-structured answer, citing the documents you used.
+The answer should be formatted as:
+
 Question: {question}
-
-Only returns the helpful answer below and nothing else.
-Helpful answer: 
+Answer: 
 """
+
+embedding_model = HuggingFaceEmbeddings(model_name = 'sentence-transformers/all-MiniLM-L6-v2', model_kwargs= {'device': device})
 
 
 def run_web_search(query: str):
@@ -37,8 +44,32 @@ def run_web_search(query: str):
     return texts
 
 
-def get_top(docs):
-    return docs[:1]
+def find_similar_sentences(
+    sentences: List[Document],
+    query: str = 'Who is Furina From Genshin Impact?',
+    embedding_model: BaseModel = embedding_model,
+    top_k: int=5
+):
+    inputs = [query] + [sentence.page_content for sentence in sentences]
+    outputs = embedding_model.embed_documents(inputs)
+
+    query_embedding = np.array(outputs[0])
+    sentences_embeddings = np.array(outputs[1:])
+
+    distances_from_query = list(
+        map(
+            lambda index, embed: 
+            {
+                'distance': np.dot(query_embedding, embed),
+                'index': index
+            },
+            range(len(sentences_embeddings)),
+            sentences_embeddings
+        )
+    )
+    distances_from_query = sorted(distances_from_query, key=lambda x: x['distance'], reverse=True)[:top_k]
+
+    return [sentences[distance['index']] for distance in distances_from_query]
 
 
 def load_llm():
@@ -59,7 +90,7 @@ def runnable():
     # Here we are setting up a sequence of actions to retrieve information. This involves two steps: running a web search and getting the top results.
     retriever = RunnableSequence(
         RunnableLambda(run_web_search),
-        RunnableLambda(get_top)
+        RunnableLambda(find_similar_sentences)
     )
 
     # Declare model chain
